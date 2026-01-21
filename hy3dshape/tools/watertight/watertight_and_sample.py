@@ -19,6 +19,30 @@ import os
 from scipy.stats import truncnorm
 import trimesh
 
+def safe_signed_distance(points, V, F, sign_type=None, **kwargs):
+    """兼容不同版本 libigl 的 signed_distance 调用"""
+    # 转换为正确的 numpy 数组类型
+    P = np.asarray(points, dtype=np.float64)
+    V = np.asarray(V, dtype=np.float64)
+    F = np.asarray(F, dtype=np.int64)
+    
+    # 新版本不支持 return_normals 参数，移除它
+    kwargs.pop('return_normals', None)
+    
+    try:
+        if sign_type is not None:
+            result = igl.signed_distance(P, V, F, sign_type=sign_type)
+        else:
+            result = igl.signed_distance(P, V, F)
+    except TypeError:
+        # 如果还是失败，尝试不带任何额外参数
+        result = igl.signed_distance(P, V, F)
+    
+    if isinstance(result, tuple):
+        return result[0]  # 只返回 sdf 值
+    return result
+
+
 def random_sample_pointcloud(mesh, num = 30000):
     points, face_idx = mesh.sample(num, return_index=True)
     normals = mesh.face_normals[face_idx]
@@ -89,35 +113,35 @@ def sample_sdf(mesh, random_surface, sharp_surface):
 
     sign_type = igl.SIGNED_DISTANCE_TYPE_FAST_WINDING_NUMBER
     try:
-        vol_sdf, I, C = igl.signed_distance(
+        vol_sdf = safe_signed_distance(
             vol_points.astype(np.float32), 
             mesh.vertices, mesh.faces, 
             return_normals=False,
             sign_type=sign_type)
     except:
-        vol_sdf, I, C = igl.signed_distance(
+        vol_sdf = safe_signed_distance(
             vol_points.astype(np.float32), 
             mesh.vertices, mesh.faces, 
             return_normals=False)
     try:
-        random_near_sdf, I, C = igl.signed_distance(
+        random_near_sdf = safe_signed_distance(
             random_near_points.astype(np.float32), 
             mesh.vertices, mesh.faces, 
             return_normals=False,
             sign_type=sign_type)
     except:
-        random_near_sdf, I, C = igl.signed_distance(
+        random_near_sdf = safe_signed_distance(
             random_near_points.astype(np.float32), 
             mesh.vertices, mesh.faces, 
             return_normals=False)
     try:
-        sharp_near_sdf, I, C = igl.signed_distance(
+        sharp_near_sdf = safe_signed_distance(
             sharp_near_points.astype(np.float32), 
             mesh.vertices, mesh.faces, 
             return_normals=False,
             sign_type=sign_type)
     except:
-        sharp_near_sdf, I, C = igl.signed_distance(
+        sharp_near_sdf = safe_signed_distance(
             sharp_near_points.astype(np.float32), 
             mesh.vertices, mesh.faces, 
             return_normals=False)
@@ -187,12 +211,16 @@ def Watertight(V, F, epsilon = 2.0/256, grid_res = 256):
     grid_points = np.vstack([X.ravel(), Y.ravel(), Z.ravel()]).T
 
     # Compute SDF at grid points using igl.signed_distance with pseudo normals
-    sdf, _, _ = igl.signed_distance(
+    sdf = safe_signed_distance(
         grid_points, V, F, sign_type=igl.SIGNED_DISTANCE_TYPE_PSEUDONORMAL
     )
  
-    # igl.marching_cubes returns (vertices, faces)
-    mc_verts, mc_faces = igl.marching_cubes(epsilon - np.abs(sdf), grid_points, grid_res, grid_res, grid_res, 0.0)
+    # igl.marching_cubes returns (vertices, faces) or more values in newer versions
+    mc_result = igl.marching_cubes(epsilon - np.abs(sdf), grid_points, grid_res, grid_res, grid_res, 0.0)
+    if isinstance(mc_result, tuple):
+        mc_verts, mc_faces = mc_result[0], mc_result[1]
+    else:
+        mc_verts, mc_faces = mc_result
 
     # mc_verts: (k x 3) array of vertices of the epsilon contour
     # mc_faces: (l x 3) array of faces of the epsilon contour

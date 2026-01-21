@@ -1,0 +1,12 @@
+[tool.uv.extra-build-dependencies]
+torch-cluster = ["torch"]
+[project]
+name = "hunyuan3d"
+version = "2.1.0"
+dependencies = [
+    "torch",
+    "transformers",
+    "numpy",
+    "trimesh",
+    "open3d",
+]

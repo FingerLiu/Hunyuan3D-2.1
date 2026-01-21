@@ -18,7 +18,8 @@ dataset:
   target: hy3dshape.data.dit_asl.AlignedShapeLatentModule
   params:
     #! Base setting
-    batch_size: 4
+    # batch_size: 4
+    batch_size: 1
     num_workers: 8
     val_num_workers: 4
 
@@ -33,7 +34,8 @@ dataset:
     std: &std [0.5, 0.5, 0.5]
 
     #! Point cloud sampling
-    pc_size: &pc_size 81920
+    # pc_size: &pc_size 81920
+    pc_size: 16384
     pc_sharpedge_size: &pc_sharpedge_size 0
     sharpedge_label: &sharpedge_label true
     return_normal: true
@@ -60,7 +62,8 @@ model:
       from_pretrained: tencent/Hunyuan3D-2.1
       #Ensure same with the dataset setting
       params: 
-        pc_size: 81920              
+        # pc_size: 81920              
+        pc_size: 16384
         pc_sharpedge_size: 0 
 
 
@@ -72,7 +75,8 @@ model:
             type: DinoImageEncoder 
             kwargs:
                 version: 'facebook/dinov2-large'
-                image_size: 518
+                # image_size: 518
+                image_size: 384
                 use_cls_token: true
 
     denoiser_cfg:

@@ -604,7 +604,13 @@ class PointCrossAttentionEncoder(nn.Module):
         random_query_ratio = num_random_query / input_random_pc_size
         idx_random_pc = torch.randperm(random_pc.shape[1], device=random_pc.device)[:input_random_pc_size]
         input_random_pc = random_pc[:, idx_random_pc, :]
-        flatten_input_random_pc = input_random_pc.view(B * input_random_pc_size, D)
+        input_random_pc_size = input_random_pc.shape[1]
+
+        # flatten_input_random_pc = input_random_pc.view(B * input_random_pc_size, D)
+        B, N, D = input_random_pc.shape
+        flatten_input_random_pc = input_random_pc.reshape(B * N, D)
+
+
         N_down = int(flatten_input_random_pc.shape[0] / B)
         batch_down = torch.arange(B).to(pc.device)
         batch_down = torch.repeat_interleave(batch_down, N_down)
@@ -642,7 +648,10 @@ class PointCrossAttentionEncoder(nn.Module):
             random_surface_feats, sharpedge_surface_feats = torch.split(feats, [self.pc_size, self.pc_sharpedge_size],
                                                                         dim=1)
             input_random_surface_feats = random_surface_feats[:, idx_random_pc, :]
-            flatten_input_random_surface_feats = input_random_surface_feats.view(B * input_random_pc_size, -1)
+            # flatten_input_random_surface_feats = input_random_surface_feats.view(B * input_random_pc_size, -1)
+            B, N, C = input_random_surface_feats.shape
+            flatten_input_random_surface_feats = input_random_surface_feats.reshape(B * N, C)
+
             query_random_feats = flatten_input_random_surface_feats[idx_query_random].view(B, -1,
                                                                                            flatten_input_random_surface_feats.shape[
                                                                                                -1])

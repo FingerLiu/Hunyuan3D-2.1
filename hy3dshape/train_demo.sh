@@ -1,7 +1,7 @@
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
-export num_gpu_per_node=8
-# export CUDA_VISIBLE_DEVICES=0
-# export num_gpu_per_node=1
+# export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+# export num_gpu_per_node=8
+export CUDA_VISIBLE_DEVICES=0
+export num_gpu_per_node=1
 
 export node_num=1
 export node_rank=0
