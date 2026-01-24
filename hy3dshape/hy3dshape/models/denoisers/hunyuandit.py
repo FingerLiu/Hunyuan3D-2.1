@@ -559,9 +559,11 @@ class HunYuanDiTPlain(nn.Module):
         num_moe_layers: int = 6,
         num_experts: int = 8,
         moe_top_k: int = 2,
+        gradient_checkpointing: bool = False,  # 添加 gradient checkpointing 支持
         **kwargs
     ):
         super().__init__()
+        self.gradient_checkpointing = gradient_checkpointing
         self.input_size = input_size
         self.depth = depth
         self.in_channels = in_channels
@@ -659,9 +661,30 @@ class HunYuanDiTPlain(nn.Module):
         skip_value_list = []
         for layer, block in enumerate(self.blocks):
             skip_value = None if layer <= self.depth // 2 else skip_value_list.pop()
-            x = block(x, c, cond, skip_value=skip_value)
+            
+            # 使用 gradient checkpointing 来减少显存
+            if self.gradient_checkpointing and self.training:
+                # 定义一个自定义 forward 函数用于 checkpoint
+                def create_custom_forward(module):
+                    def custom_forward(*inputs):
+                        return module(*inputs)
+                    return custom_forward
+                
+                x = torch.utils.checkpoint.checkpoint(
+                    create_custom_forward(block),
+                    x, c, cond, skip_value,
+                    use_reentrant=False
+                )
+            else:
+                x = block(x, c, cond, skip_value=skip_value)
+            
             if layer < self.depth // 2:
                 skip_value_list.append(x)
 
         x = self.final_layer(x)
         return x
+    
+    def enable_gradient_checkpointing(self, enabled: bool = True):
+        """启用或禁用 gradient checkpointing"""
+        self.gradient_checkpointing = enabled
+        print(f"Gradient checkpointing {'enabled' if enabled else 'disabled'}")

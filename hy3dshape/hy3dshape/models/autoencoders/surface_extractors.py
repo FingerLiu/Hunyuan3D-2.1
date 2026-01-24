@@ -33,14 +33,6 @@ def center_vertices(vertices):
     return vertices - vert_center
 
 
-class NoSurfaceError(RuntimeError):
-    """
-    Raised when an iso-surface cannot be extracted from the given volume, e.g.
-    because the requested `mc_level` is outside the scalar field range or the
-    field is degenerate (constant / non-finite).
-    """
-
-
 class SurfaceExtractor:
     def _compute_box_stat(self, bounds: Union[Tuple[float], List[float], float], octree_resolution: int):
         """
@@ -98,9 +90,6 @@ class SurfaceExtractor:
                 faces = np.ascontiguousarray(faces)
                 outputs.append(Latent2MeshOutput(mesh_v=vertices, mesh_f=faces))
 
-            except NoSurfaceError:
-                # Expected in early training / some samples: no valid iso-surface for this mc_level.
-                outputs.append(None)
             except Exception:
                 import traceback
                 traceback.print_exc()
@@ -127,24 +116,9 @@ class MCSurfaceExtractor(SurfaceExtractor):
                   box coordinates.
                 - faces (np.ndarray): Extracted mesh faces (triangles).
         """
-        grid = grid_logit.detach().to(torch.float32).cpu().numpy()
-        vmin = float(np.nanmin(grid))
-        vmax = float(np.nanmax(grid))
-
-        if not np.isfinite(vmin) or not np.isfinite(vmax):
-            raise NoSurfaceError("Non-finite volume values encountered (nan/inf).")
-        if vmin == vmax:
-            raise NoSurfaceError(f"Degenerate volume: min==max=={vmin:.6g}, cannot extract iso-surface.")
-        if mc_level < vmin or mc_level > vmax:
-            raise NoSurfaceError(
-                f"mc_level {mc_level:.6g} out of range [{vmin:.6g}, {vmax:.6g}]; skipping mesh extraction."
-            )
-
-        vertices, faces, normals, _ = measure.marching_cubes(
-            grid,
-            mc_level,
-            method="lewiner",
-        )
+        vertices, faces, normals, _ = measure.marching_cubes(grid_logit.cpu().numpy(),
+                                                             mc_level,
+                                                             method="lewiner")
         grid_size, bbox_min, bbox_size = self._compute_box_stat(bounds, octree_resolution)
         vertices = vertices / grid_size * bbox_size + bbox_min
         return vertices, faces

@@ -211,6 +211,12 @@ class VectsetVAE(nn.Module):
     def latents2mesh(self, latents: torch.FloatTensor, **kwargs):
         with synchronize_timer('Volume decoding'):
             grid_logits = self.volume_decoder(latents, self.geo_decoder, **kwargs)
+        
+        # Debug: 打印 volume 的值范围，用于诊断 mesh 生成失败的问题
+        print(f"[DEBUG] Latents stats: min={latents.min().item():.4f}, max={latents.max().item():.4f}, mean={latents.mean().item():.4f}")
+        print(f"[DEBUG] Grid logits (volume) stats: min={grid_logits.min().item():.4f}, max={grid_logits.max().item():.4f}, mean={grid_logits.mean().item():.4f}")
+        print(f"[DEBUG] mc_level={kwargs.get('mc_level', 0.0)}, 需要在 [{grid_logits.min().item():.4f}, {grid_logits.max().item():.4f}] 范围内")
+        
         with synchronize_timer('Surface extraction'):
             outputs = self.surface_extractor(grid_logits, **kwargs)
         return outputs

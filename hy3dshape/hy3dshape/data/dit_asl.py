@@ -246,11 +246,21 @@ class AlignedShapeLatentDataset(torch.utils.data.dataset.IterableDataset):
 
     def decode(self, item):
         uid = item.split('/')[-1]
-        render_img_paths = [os.path.join(item, f'render_cond/{i:03d}.png') for i in range(24)]
-        # transforms_json_path = os.path.join(item, 'render_cond/transforms.json')
+        
+        # 优先从 transforms.json 读取实际存在的图片列表
+        transforms_json_path = os.path.join(item, 'render_cond/transforms.json')
+        if os.path.exists(transforms_json_path):
+            with open(transforms_json_path, 'r') as f:
+                transforms_data = json.load(f)
+            render_img_paths = [
+                os.path.join(item, 'render_cond', frame['file_path'])
+                for frame in transforms_data.get('frames', [])
+            ]
+        else:
+            # 回退到原来的硬编码逻辑
+            render_img_paths = [os.path.join(item, f'render_cond/{i:03d}.png') for i in range(24)]
+        
         surface_npz_path = os.path.join(item, f'geo_data/{uid}_surface.npz')
-        # sdf_npz_path = os.path.join(item, f'geo_data/{uid}_sdf.npz')
-        # watertight_obj_path = os.path.join(item, f'geo_data/{uid}_watertight.obj')
         sample = {}
         sample["image"] = render_img_paths
         surface_data = read_npz(surface_npz_path)

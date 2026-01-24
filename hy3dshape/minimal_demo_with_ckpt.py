@@ -39,12 +39,12 @@ model = model.cuda().half()
 pipeline_shapegen.model = model
 
 
-image = 'tools/mini_testset/images/015.png'
+image_path = 'tools/mini_testset/images/015.png'
 
-# image = Image.open(image_path).convert("RGBA")
-# if image.mode == 'RGB':
-#     rembg = BackgroundRemover()
-#     image = rembg(image)
+image = Image.open(image_path).convert("RGBA")
+if image.mode == 'RGB':
+    rembg = BackgroundRemover()
+    image = rembg(image)
 
 # mesh = pipeline_shapegen(image=image, guidance_scale=1.0)[0]
 mesh = pipeline_shapegen(image=image)[0]

@@ -1,0 +1,145 @@
+name: "HunyuanDiT finetuning for 4090 24GB"
+# 使用预训练权重 + gradient checkpointing 来减少显存
+
+training:
+  steps: 10000
+  use_amp: true
+  amp_type: "bf16"
+  base_lr: 1e-5          # 微调用小学习率
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: "norm"
+  every_n_train_steps: 1000
+  val_check_interval: 200
+  limit_val_batches: 4   # 减少验证 batch 数
+
+dataset:
+  target: hy3dshape.data.dit_asl.AlignedShapeLatentModule
+  params:
+    batch_size: 1        # 必须是 1
+    num_workers: 4
+    val_num_workers: 2
+
+    train_data_list: demos/sem/trainset/preprocessed
+    val_data_list: demos/sem/trainset/preprocessed
+
+    cond_stage_key: "image"
+    image_size: 518      # 必须保持 518 以匹配预训练
+    mean: &mean [0.5, 0.5, 0.5]
+    std: &std [0.5, 0.5, 0.5]
+
+    # pc_size: 16384
+    pc_size: 8192
+    pc_sharpedge_size: 0
+    sharpedge_label: true
+    return_normal: true
+    padding: true
+
+model:
+  target: hy3dshape.models.diffusion.flow_matching_sit.Diffuser
+  params:
+    first_stage_key: "surface"
+    cond_stage_key: "image"
+    scale_by_std: false
+    z_scale_factor: &z_scale_factor 1.0039506158752403
+    torch_compile: false
+    
+    # LoRA 配置 - 大幅减少可训练参数和显存需求
+    lora_config:
+      rank: 16                    # LoRA rank (可调整: 8/16/32)
+      target_modules:             # 只训练注意力层的 q/k/v/out 投影
+        - "to_q"
+        - "to_k"
+        - "to_v"
+        - "out_proj"
+
+    first_stage_config:
+      target: hy3dshape.models.autoencoders.ShapeVAE
+      from_pretrained: tencent/Hunyuan3D-2.1
+      params:
+        # pc_size: 16384
+        pc_size: 8192
+        pc_sharpedge_size: 0
+
+    cond_stage_config:
+      target: hy3dshape.models.conditioner.SingleImageEncoder
+      params:
+        drop_ratio: 0.1
+        main_image_encoder:
+            type: DinoImageEncoder
+            kwargs:
+                version: 'facebook/dinov2-large'
+                image_size: 518    # 必须保持 518
+                use_cls_token: true
+
+    # 使用预训练模型的完整架构
+    denoiser_cfg:
+      target: hy3dshape.models.denoisers.hunyuandit.HunYuanDiTPlain
+      from_pretrained: tencent/Hunyuan3D-2.1   # ← 关键：加载预训练权重
+      params:
+        gradient_checkpointing: true  # ← 启用 gradient checkpointing 节省显存
+        input_size: 4096
+        in_channels: 64
+        hidden_size: 2048
+        context_dim: 1024
+        depth: 21
+        num_heads: 16
+        text_len: 1370
+        num_moe_layers: 6
+        num_experts: 8
+        moe_top_k: 2
+
+    scheduler_cfg:
+      transport:
+        target: hy3dshape.models.diffusion.transport.create_transport
+        params:
+          path_type: Linear
+          prediction: velocity
+      sampler:
+        target: hy3dshape.models.diffusion.transport.Sampler
+        params: {}
+        ode_params:
+          sampling_method: euler
+          num_steps: 50
+
+    optimizer_cfg:
+      optimizer:
+        target: torch.optim.AdamW
+        params:
+          betas: [0.9, 0.99]
+          eps: 1.e-6
+          weight_decay: 1.e-2
+
+      scheduler:
+        target: hy3dshape.utils.trainings.lr_scheduler.LambdaWarmUpCosineFactorScheduler
+        params:
+          warm_up_steps: 100
+          f_start: 1.e-6
+          f_min: 1.e-3
+          f_max: 1.0
+
+    pipeline_cfg:
+      target: hy3dshape.pipelines.Hunyuan3DDiTFlowMatchingPipeline
+
+    image_processor_cfg:
+      target: hy3dshape.preprocessors.ImageProcessorV2
+      params: {}
+
+callbacks:
+    logger:
+      target: hy3dshape.utils.trainings.mesh_log_callback.ImageConditionalASLDiffuserLogger
+      params:
+        step_frequency: 500
+        num_samples: 1
+        sample_times: 1
+        mean: *mean
+        std: *std
+        bounds: [-1.01, -1.01, -1.01, 1.01, 1.01, 1.01]
+        octree_depth: 8
+        num_chunks: 50000
+        mc_level: 0.0
+
+    file_loggers:
+        target: hy3dshape.utils.trainings.mesh_log_callback.ImageConditionalFixASLDiffuserLogger
+        params:
+          step_frequency: 500
+          test_data_path: "demos/sem/testset/images.json"

@@ -3,7 +3,8 @@ name: "HunyuanDiT flowmatching; VAE: 4096 token length; ImageEncoder: DINO-v2 La
 # You can adjust model arch or batch_size according to your GPU memory
 
 training:
-  steps: 10_0000_0000
+  # steps: 10_0000_0000
+  steps: 6000
   use_amp: true
   amp_type: "bf16"
   base_lr: 1e-4
@@ -29,7 +30,8 @@ dataset:
 
     #! Image loading
     cond_stage_key: "image"
-    image_size: 518
+    # image_size: 518
+    image_size: 384
     mean: &mean [0.5, 0.5, 0.5]
     std: &std [0.5, 0.5, 0.5]
 
@@ -75,12 +77,13 @@ model:
             type: DinoImageEncoder 
             kwargs:
                 version: 'facebook/dinov2-large'
-                # image_size: 518
-                image_size: 384
+                image_size: 518
+                # image_size: 384
                 use_cls_token: true
 
     denoiser_cfg:
       target: hy3dshape.models.denoisers.hunyuandit.HunYuanDiTPlain
+      from_pretrained: tencent/Hunyuan3D-2.1 
       params:
         input_size: 4096
         in_channels: 64
@@ -90,6 +93,7 @@ model:
         num_heads: 16
         qk_norm: true
         text_len: 1370
+        # text_len: 730
         with_decoupled_ca: false
         use_attention_pooling: false
         qk_norm_type: 'rms'
