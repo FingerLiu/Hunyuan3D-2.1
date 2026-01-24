@@ -18,6 +18,8 @@ warnings.filterwarnings("ignore")
 
 import os
 import torch
+# torch.set_float32_matmul_precision("high")
+torch.set_float32_matmul_precision("medium")
 import argparse
 from pathlib import Path
 from omegaconf import OmegaConf, DictConfig
