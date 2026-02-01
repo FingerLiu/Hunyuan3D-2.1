@@ -6,11 +6,12 @@ version = "2.1.0"
 dependencies = [
     "torch",
     "transformers",
-    "numpy",
+    "numpy==2.3",
     "trimesh",
     "open3d",
     "diffusers>=0.36.0",
     "einops>=0.8.1",
     "omegaconf>=2.3.0",
     "peft>=0.18.1",
+    "tensorboard>=2.20.0",
 ]

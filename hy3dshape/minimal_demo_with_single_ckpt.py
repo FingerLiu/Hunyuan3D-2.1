@@ -39,8 +39,8 @@ else:
 # python3 zero_to_fp32.py ./ ./out --max_shard_size 30GB
 # then you can get output_folder/dit/overfitting_depth_16_token_4096_lr1e4/ckpt/ckpt-step=00004000.ckpt/out/pytorch_model.bin
 
-ckpt_cfg_path = 'output_folder/dit/overfitting_depth_16_token_4096_lr1e4/hunyuandit-mini-overfitting-flowmatching-dinol518-bf16-lr1e4-4096.yaml'
-ckpt_path = 'output_folder/dit/overfitting_depth_16_token_4096_lr1e4/ckpt/ckpt-step=00016000.ckpt'
+ckpt_cfg_path = 'output_folder/dit/finetuning_4090_sem_v2/hunyuandit-finetuning-4090-24gb-sem.yaml'
+ckpt_path = 'output_folder/dit/finetuning_4090_sem_v2/ckpt/ckpt-step=00050000.ckpt'
 
 print("\n--- Attempting to load the model using the new from_lightning_checkpoint method ---")
 pipeline_shapegen = Hunyuan3DDiTFlowMatchingPipeline.from_lightning_checkpoint(
@@ -50,13 +50,16 @@ pipeline_shapegen = Hunyuan3DDiTFlowMatchingPipeline.from_lightning_checkpoint(
     dtype=dtype
 )
 
-image_path = 'tools/mini_testset/images/015.png'
+# image_path = 'tools/mini_testset/images/015.png'
+# image_path = 'demos/sem/testset/images/010.png'
+image_path = 'demos/sem/testset/images/010.png'
 
 image = Image.open(image_path).convert("RGBA")
-if image.mode == 'RGB':
-    rembg = BackgroundRemover()
-    image = rembg(image)
+# if image.mode == 'RGB':
+#     rembg = BackgroundRemover()
+#     image = rembg(image)
 
 # mesh = pipeline_shapegen(image=image, guidance_scale=1.0)[0]
 mesh = pipeline_shapegen(image=image)[0]
-mesh.export('demo.glb')
+mesh.export('010-single-ckpt.glb')
+print("Demo completed successfully.")

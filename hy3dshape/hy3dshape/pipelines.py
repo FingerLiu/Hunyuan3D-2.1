@@ -830,85 +830,84 @@ class Hunyuan3DDiTFlowMatchingPipeline(Hunyuan3DDiTPipeline):
         Returns:
             Hunyuan3DDiTFlowMatchingPipeline: An instantiated pipeline ready for inference.
         """
+        """
+        NOTE:
+            The training config in this repo typically enables LoRA (and optionally EMA) on the denoiser.
+            During training/validation, sampling is performed via `Diffuser.sample()` which uses
+            the *same instantiated LightningModule* and its `self.pipeline`.
+
+            To match training/val behavior as closely as possible, we:
+            - instantiate the full training module (`hy3dshape.models.diffusion.flow_matching_sit.Diffuser`)
+              from the YAML;
+            - load the checkpoint `state_dict` into it (including LoRA / EMA weights if present);
+            - return the module's already-constructed `self.pipeline`.
+        """
+
         from omegaconf import OmegaConf
         from hy3dshape.utils.misc import instantiate_from_config
-        from hy3dshape.schedulers import FlowMatchEulerDiscreteScheduler
 
         logger.info(f"Loading model from Lightning checkpoint: {ckpt_path}")
         logger.info(f"Using training config: {config_path}")
 
         config = OmegaConf.load(config_path)
 
+        # 1) Instantiate the training LightningModule (this also builds its inference pipeline).
+        logger.info("Instantiating training module (Diffuser) from config...")
+        diffuser = instantiate_from_config(config.model)
+
+        # 2) Load checkpoint weights into the training module (handles LoRA/EMA keys).
         if os.path.isdir(ckpt_path):
             # Assumes a Deepspeed-saved checkpoint directory
             model_state_file = os.path.join(ckpt_path, 'checkpoint', 'mp_rank_00_model_states.pt')
             if not os.path.exists(model_state_file):
                 raise FileNotFoundError(
-                    f"Could not find model weights file 'mp_rank_00_model_states.pt' in Deepspeed checkpoint directory: {os.path.join(ckpt_path, 'checkpoint')}"
+                    "Could not find model weights file 'mp_rank_00_model_states.pt' in Deepspeed checkpoint "
+                    f"directory: {os.path.join(ckpt_path, 'checkpoint')}"
                 )
-            
+
             logger.info(f"Detected Deepspeed checkpoint directory, loading weights from: '{model_state_file}'")
             ckpt = torch.load(model_state_file, map_location='cpu', weights_only=False)
-            # Deepspeed weights are often nested under the 'module' key
             state_dict = ckpt.get('module', ckpt)
+            # Align with `Diffuser.init_from_ckpt` behavior
+            state_dict = {k.replace('_forward_module.', ''): v for k, v in state_dict.items()}
         else:
-            # Standard .ckpt file
             logger.info("Detected standard .ckpt file.")
             ckpt = torch.load(ckpt_path, map_location='cpu', weights_only=False)
             state_dict = ckpt.get('state_dict', ckpt)
 
-        # 1. Instantiate components that were frozen during training.
-        #    They will load their own pretrained weights upon instantiation.
-        logger.info("Instantiating VAE, Conditioner, and ImageProcessor...")
-        vae = instantiate_from_config(config.model.params.first_stage_config)
-        conditioner = instantiate_from_config(config.model.params.cond_stage_config)
-        image_processor = instantiate_from_config(config.model.params.image_processor_cfg)
-
-        # 2. Instantiate the component that was trained (the Denoiser).
-        logger.info("Instantiating Denoiser...")
-        denoiser = instantiate_from_config(config.model.params.denoiser_cfg)
-        
-        # 3. Load weights only for the Denoiser from our training checkpoint.
-        possible_prefixes = ["model.model.", "_forward_module.model.", "model."]
-        denoiser_dict = {}
-        matched_prefix = None
-        for prefix in possible_prefixes:
-            sub_dict = {k.replace(prefix, ''): v for k, v in state_dict.items() if k.startswith(prefix)}
-            if sub_dict:
-                denoiser_dict = sub_dict
-                matched_prefix = prefix
-                break
-                
-        if denoiser_dict:
-            logger.info(f"Successfully matched Denoiser weight prefix: '{matched_prefix}'")
-            missing_keys, unexpected_keys = denoiser.load_state_dict(denoiser_dict, strict=False)
-            logger.info(" Successfully loaded weights for 'denoiser'.")
-            if missing_keys:
-                logger.warning(f"  - Missing keys: {missing_keys}")
-            if unexpected_keys:
-                logger.warning(f"  - Unexpected keys: {unexpected_keys}")
-        else:
-            logger.warning("Could not find weights for 'denoiser' in checkpoint. It will be randomly initialized.")
-
-        # 4. Instantiate a new, inference-compatible scheduler.
-        logger.info("Creating a new scheduler for inference...")
-        scheduler = FlowMatchEulerDiscreteScheduler()
-        
-        # 5. Assemble the final, healthy pipeline.
-        pipeline = cls(
-            model=denoiser,
-            vae=vae,
-            scheduler=scheduler,
-            conditioner=conditioner,
-            image_processor=image_processor,
-            **kwargs,
+        missing_keys, unexpected_keys = diffuser.load_state_dict(state_dict, strict=False)
+        logger.info(
+            f"Loaded checkpoint into Diffuser with {len(missing_keys)} missing and {len(unexpected_keys)} unexpected keys."
         )
-        
-        # 6. Move all model components to the correct device and set to evaluation mode.
+        if missing_keys:
+            logger.warning(f"  - Missing keys (first 50): {missing_keys[:50]}")
+        if unexpected_keys:
+            logger.warning(f"  - Unexpected keys (first 50): {unexpected_keys[:50]}")
+
+        # 3) If EMA inference is enabled in config, mirror `ema_scope()` sampling behavior by copying EMA weights once.
+        try:
+            ema_cfg = getattr(diffuser, "ema_config", None)
+            ema_inference = False
+            if ema_cfg is not None:
+                ema_inference = bool(getattr(ema_cfg, "ema_inference", False) or ema_cfg.get("ema_inference", False))
+            if ema_inference and hasattr(diffuser, "model_ema"):
+                diffuser.model_ema.copy_to(diffuser.model)
+                logger.info("EMA inference enabled: copied EMA weights to denoiser.")
+        except Exception as e:
+            logger.warning(f"Failed to apply EMA inference weights: {e}")
+
+        # 4) Extract the already-built pipeline and move it to the desired device/dtype.
+        pipeline = diffuser.pipeline
         pipeline.to(torch.device(device), dtype=dtype)
+
+        # Ensure eval-mode on all components.
         pipeline.model.eval()
         pipeline.vae.eval()
         pipeline.conditioner.eval()
-        
+
+        # Disable conditional drop for deterministic inference (best-effort).
+        if hasattr(pipeline.conditioner, "disable_drop"):
+            pipeline.conditioner.disable_drop = True
+
         logger.info("\n Pipeline successfully assembled from Lightning checkpoint!")
         return pipeline
