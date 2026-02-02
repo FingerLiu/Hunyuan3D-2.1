@@ -209,3 +209,13 @@ if __name__ == "__main__":
     if training_cfg.ckpt_path == '': 
         training_cfg.ckpt_path = None
     trainer.fit(model, datamodule=data, ckpt_path=training_cfg.ckpt_path)
+
+    # Coordinated shutdown for multi-GPU: avoid "destroy_process_group() was not called"
+    # and "TCPStore connection closed" on non-rank0 when rank0 exits first.
+    if torch.distributed.is_initialized():
+        try:
+            torch.distributed.barrier()
+            torch.distributed.destroy_process_group()
+        except Exception as e:
+            print("error cleaning up ", e)
+            pass  # may already be destroyed by strategy teardown

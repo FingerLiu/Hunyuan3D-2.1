@@ -2,7 +2,7 @@ name: "HunyuanDiT finetuning for 4090 24GB"
 # 使用预训练权重 + gradient checkpointing 来减少显存
 
 training:
-  steps: 50000
+  steps: 1000
   use_amp: true
   amp_type: "bf16"
   base_lr: 1e-5          # 微调用小学习率
@@ -76,7 +76,7 @@ model:
       target: hy3dshape.models.denoisers.hunyuandit.HunYuanDiTPlain
       from_pretrained: tencent/Hunyuan3D-2.1   # ← 关键：加载预训练权重
       params:
-        # gradient_checkpointing: true  # ← 启用 gradient checkpointing 节省显存
+        gradient_checkpointing: true  # ← 启用 gradient checkpointing 节省显存
         input_size: 4096
         in_channels: 64
         hidden_size: 2048
