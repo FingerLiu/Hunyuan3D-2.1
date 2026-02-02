@@ -19,18 +19,24 @@ from hy3dshape.models.autoencoders import ShapeVAE
 from hy3dshape.pipelines import export_to_trimesh
 
 
+# 与训练 config 一致：传 params 覆盖 hub 默认，即可用更小点数（省显存）
+# 不传则用 hub 默认 pc_size=81920
+PC_SIZE = 8192
+PC_SHARPEDGE_SIZE = 0
+
 vae = ShapeVAE.from_pretrained(
     'tencent/Hunyuan3D-2.1',
     use_safetensors=False,
     variant='fp16',
+    pc_size=PC_SIZE,
+    pc_sharpedge_size=PC_SHARPEDGE_SIZE,
 )
-
 
 loader = SharpEdgeSurfaceLoader(
-    num_sharp_points=0,
-    num_uniform_points=81920,
+    num_sharp_points=PC_SHARPEDGE_SIZE,
+    num_uniform_points=PC_SIZE,
 )
-mesh_demo = 'demos/demo.glb'
+mesh_demo = 'demos/010.glb'
 surface = loader(mesh_demo).to('cuda', dtype=torch.float16)
 print(surface.shape)
 

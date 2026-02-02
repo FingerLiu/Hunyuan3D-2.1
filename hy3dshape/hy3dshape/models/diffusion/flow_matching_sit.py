@@ -100,6 +100,8 @@ class Diffuser(pl.LightningModule):
         self.pipeline_cfg = pipeline_cfg
         from ...schedulers import FlowMatchEulerDiscreteScheduler
         scheduler = FlowMatchEulerDiscreteScheduler(num_train_timesteps=1000)
+        # Keep pipeline on CPU during init so multi-GPU/DeepSpeed can place modules correctly.
+        # Pipeline device is set in sample() via self.pipeline.device = self.device.
         self.pipeline = instantiate_from_config(
             pipeline_cfg,
             vae=self.first_stage_model,
@@ -107,6 +109,7 @@ class Diffuser(pl.LightningModule):
             scheduler=scheduler, # self.sampler,
             conditioner=self.cond_stage_model,
             image_processor=self.image_processor,
+            device="cpu",
         )
 
         # ========= torch compile to accelerate ========= #
